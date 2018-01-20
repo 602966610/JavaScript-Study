@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+	<head>
+		<meta charset="UTF-8">
+		<title>canvas 同色消除</title>
+		<style>
+			body {
+				background: black;
+			}
+			
+			#myCanvas {
+				background: black;
+				box-shadow: 0 0 30px lightcyan;
+				margin: 50px auto 0;
+				display: block;
+			}
+		</style>
+	</head>
+
+	<body>
+		<canvas id="myCanvas">
+			您的浏览器不支持canvas,请您换一个浏览器
+		</canvas>
+		<img src="snowGirl.jpeg" id="img" alt="" style="display: none;" />
+	</body>
+	<script>
+		var myCanvas = document.getElementById('myCanvas'); //画板
+		var ctx = myCanvas.getContext('2d'); //画笔
+		var img = document.getElementById('img');
+
+		myCanvas.width = 1280;
+		myCanvas.height = 720;
+
+		//随机数函数
+		function rn(x, y) {
+			return Math.round(Math.random() * (y - x) + x);
+		}
+
+		//创建雪花数组
+		snowArr = [];
+		//小雪花数组
+		boomSnowArr = [];
+		//蝴蝶数组
+		bullerflyArr = [];
+
+		img.onload = function() {
+			ctx.drawImage(img, 0, 0, myCanvas.width, myCanvas.height);
+			createBg();
+		}
+
+		function createBg() {
+			for(var i = 1; i < Math.abs(myCanvas.height / 50); i++) {
+				ctx.beginPath();
+				ctx.moveTo(0, i * 50);
+				ctx.lineTo(myCanvas.width, i * 50);
+				ctx.lineWidth = 1;
+				ctx.strokeStyle = 'deepskyblue';
+				ctx.stroke();
+			}
+			for(var j = 1; j < Math.abs(myCanvas.width / 50); j++) {
+				ctx.beginPath();
+				ctx.moveTo(j * 50, 0);
+				ctx.lineTo(j * 50, myCanvas.height);
+				ctx.lineWidth = 1;
+				ctx.strokeStyle = 'deepskyblue';
+				ctx.stroke();
+			}
+		}
+
+		//创建雪花
+		/*
+		 x,y 圆心的坐标
+		 vx,vy 水平方向和竖直方向移动的速度
+		 bc 背景色
+		 dis 摇摆的范围
+		 */
+		function snowes(x, wh, vx, vy, bc, dis) {
+			this.x = x;
+			this.y = -wh;
+			this.wh = wh;
+			this.vx = vx;
+			this.vy = vy;
+			this.bc = bc;
+			this.dis = dis;
+			this.left = this.x - dis; //摆动左边边界
+			this.right = this.x + dis; //摆动右边的边界
+		}
+		snowes.prototype.move = function() {
+			//当块摆动到达边界之后,反弹
+			if(this.x < this.left || this.x > this.right || this.x < 0 || this.x > myCanvas.width - this.wh) {
+				this.vx *= -1;
+			}
+			this.x += this.vx;
+			this.y += this.vy;
+			ctx.beginPath();
+			ctx.fillStyle = this.bc;
+			ctx.shadowOffsetX = 0;
+			ctx.shadowOffsetY = 0;
+			ctx.shadowBlur = 15;
+			ctx.shadowColor = 'white';
+			ctx.arc(this.x, this.y, this.wh, 0, 2 * Math.PI);
+			ctx.fill();
+		}
+
+		//实例化snowes对象函数
+		var minWh = 5,
+			maxWh = 10; //宽高范围
+		var minX = 0,
+			maxX = myCanvas.width - maxWh; //x坐标范围
+		var minVx = -2,
+			maxVx = 2 //x方向速度范围
+		var minVy = 1 / 2,
+			maxVy = 2; //y方向速度范围
+		var minDis = 100,
+			maxDis = 200; //摆动范围
+		function createSnowes() {
+			var x = rn(minX, maxX);
+			var wh = rn(minWh, maxWh);
+			var vx = rn(minVx, maxVx);
+			var vy = rn(minVy, maxVy);
+			var dis = rn(minDis, maxDis);
+			var bc = 'rgb(' + 255 + ',' + 255 + ',' + rn(200, 255) + ')';
+			//实例化一个掉落块
+			var newSnow = new snowes(x, wh, vx, vy, bc, dis);
+			snowArr.push(newSnow);
+		}
+
+		//判断小块是否移出画布，移出画布从enemy数组中删除
+		function judgeSnowes() {
+			for(var i = 0; i < snowArr.length; i++) {
+				if(snowArr[i].y > myCanvas.height) {
+					snowArr.splice(i, 1);
+					//break;			
+					//移出元素之后数组结构发生变化，为了放止漏判，要让i-1                                                                                     
+					i--;
+				}
+			}
+		}
+
+		//封装爆炸物类
+		function Boom(x, y, vx, vy, bc) {
+			this.x = x; //x坐标
+			this.y = y; //y坐标
+			this.vx = vx; //水平方向速度
+			this.vy = vy; //垂直方向速度
+			this.bc = bc; //背景色
+			this.times = 0; //爆炸物的绘制次数（move函数每调一次，time加+）
+		}
+		Boom.prototype.move = function() {
+			this.x += this.vx;
+			this.y += this.vy;
+			ctx.beginPath();
+			ctx.fillStyle = this.bc;
+			ctx.shadowOffsetX = 0;
+			ctx.shadowOffsetY = 0;
+			ctx.shadowBlur = 15;
+			ctx.shadowColor = 'white';
+			ctx.arc(this.x, this.y, 3, 0, 2 * Math.PI);
+			ctx.fill();
+		}
+
+		//判断是否碰撞（碰撞检测）
+		function snowHit() {
+
+			myCanvas.onmousemove = function() {
+				var e1 = window.event || event;
+				for(var i = 0; i < snowArr.length; i++) {
+					var a = snowArr[i];
+					var ex = e1.pageX - myCanvas.offsetLeft;
+					var ey = e1.pageY - myCanvas.offsetTop;
+					var bgl = Math.sqrt(Math.pow(ex - a.x, 2) + Math.pow(ey - a.y, 2));
+					if(bgl < 30) {
+
+						//根据碰撞雪花的信息创建小雪花
+						createSnowBoom(a.x, a.y, a.wh, a.bc);
+
+						//碰撞移除
+						snowArr.splice(i, 1);
+						i--;
+					}
+				}
+			}
+
+			//蝴蝶碰撞
+			for(var j = 0; j < snowArr.length; j++) {
+				var a = snowArr[j];
+				var bx = buttleflyX;
+				var by = buttleflyY;
+				var bglB = Math.sqrt(Math.pow(bx - a.x, 2) + Math.pow(by - a.y, 2));
+				if(bglB < 80) {
+
+					//根据碰撞雪花的信息创建小雪花
+					createSnowBoom(a.x, a.y, a.wh, a.bc);
+
+					//碰撞移除
+					snowArr.splice(j, 1);
+					j--;
+				}
+
+			}
+		}
+
+		//创建小雪花
+		function createSnowBoom(x, y, wh, bc) {
+			var littleSnowArr = []; // 临时数组,放当前被击中的块产生的那一批小雪花
+			//实例化小雪花
+			var num = Math.ceil(wh / 2);
+			//双层循环实例化化类
+			for(var i = 0; i < num; i++) {
+				//计算每行的y坐标
+				var thisY = y + 8 * i;
+				for(var j = 0; j < num; j++) {
+					var thisX = x + 8 * j;
+					//实例化爆炸物对象
+					var vx = rn(-5, 5);
+					var vy = rn(-5, 5);
+					if(vx == 0 && vy == 0) {
+						vx = -5;
+						vy = 5;
+					}
+					var boom = new Boom(thisX, thisY, vx, vy, bc);
+					littleSnowArr.push(boom);
+				}
+			}
+			boomSnowArr.push(littleSnowArr);
+		}
+
+		//移除小雪花
+		function judgeSnowBoom() {
+			for(var i = 0; i < boomSnowArr.length; i++) {
+				for(var j = 0; j < boomSnowArr[i].length; j++) {
+					//判断一批爆炸物中移动最慢的是否从画布移除
+					var maxTimes = Math.ceil(Math.sqrt(Math.pow(myCanvas.width, 2) + Math.pow(myCanvas.height, 2)));
+					if(boomSnowArr[i][j].times > maxTimes) {
+						boomSnowArr.splice(i, 1);
+						i--;
+						break;
+					}
+				}
+			}
+		}
+
+		//封装蝴蝶
+		var time = 0;
+		var buttleflyX = 115;
+		var buttleflyY = 360;
+		var buttleflyFlag = 0;
+		var a1 = 30,
+			a2 = 30,
+			a3 = 100,
+			b3 = 80;
+
+		function Butterfly(x, y, bc) {
+			this.x = x; //x坐标
+			this.y = y; //y坐标
+			this.bc = bc; //背景色
+		}
+		Butterfly.prototype.move = function() {
+			time += 2;
+			ctx.beginPath();
+			ctx.fillStyle = 'rgb(255,245,245)';
+			ctx.shadowOffsetX = 0;
+			ctx.shadowOffsetY = 0;
+			ctx.shadowBlur = 30;
+			ctx.shadowColor = this.bc;
+			ctx.moveTo(this.x, this.y);
+			var a, b;
+
+			if(time % 100 >= 75 && time % 100 < 100) {
+				a = 60;
+				b = 45;
+			} else if(time % 100 >= 50) {
+				a = 75;
+				b = 60;
+			} else if(time % 100 >= 25) {
+				a = 90;
+				b = 70;
+			} else {
+				a = 100;
+				b = 80;
+			}
+
+			var m = 1,
+				n = 1;
+			var o1o2 = 30;
+
+			//键盘移动事件
+			window.onkeydown = function(event) {
+				var keyID = event.keyCode ? event.keyCode : event.which;
+				if(keyID === 38 || keyID === 87) { // w || ⬆️
+					buttleflyY -= o1o2;
+					buttleflyFlag = 0;
+					bottomFlag = 0;
+					bottomFlagArr.unshift(bottomFlag);
+					event.preventDefault();
+				}
+				if(keyID === 39 || keyID === 68) { // d || ➡️️
+					buttleflyX += o1o2;
+					buttleflyFlag = 1;
+					bottomFlag = 1;
+					bottomFlagArr.unshift(bottomFlag);
+					m = 1;
+					n = 1;
+					a3 = -100;
+					b3 = 80;
+
+					event.preventDefault();
+				}
+				if(keyID === 40 || keyID === 83) { // s || ⬇️️
+					buttleflyY += o1o2;
+					buttleflyFlag = 2;
+					bottomFlag = 2;
+					bottomFlagArr.unshift(bottomFlag);
+					m = 1;
+					n = 1;
+					a3 = -100;
+					b3 = 80;
+					event.preventDefault();
+				}
+				if(keyID === 37 || keyID === 65) { // a || ⬅️️
+					buttleflyX -= o1o2;
+					buttleflyFlag = 3;
+					bottomFlag = 3;
+					bottomFlagArr.unshift(bottomFlag);
+					m = 1;
+					n = 1;
+					a3 = -100;
+					b3 = 80;
+					event.preventDefault();
+				}
+
+			}
+
+			this.x = buttleflyX;
+			this.y = buttleflyY;
+			//判断蝴蝶x，y值的最大值，不让蝴蝶从画布出去
+			if(this.x > myCanvas.width - 50) {
+				this.x = myCanvas.width - 50;
+			}
+			if(this.x < 50) {
+				this.x = 50;
+			}
+			if(this.y > myCanvas.height - 40) {
+				this.y = myCanvas.height - 40;
+			}
+			if(this.y < 50) {
+				this.y = 50;
+			}
+
+			if(buttleflyFlag == 0 || buttleflyFlag == 2) {
+				if(buttleflyFlag == 0) {
+					a3 = -100;
+					b3 = 80;
+				} else if(buttleflyFlag == 2) {
+					n = -1;
+				}
+				ctx.bezierCurveTo(this.x + a * m, this.y - a1 * n, this.x + a2 * m, this.y + a3 * n, this.x, this.y); //第1
+				ctx.bezierCurveTo(this.x - a * m, this.y - a1 * n, this.x - a2 * m, this.y + a3 * n, this.x, this.y); //第2
+				ctx.bezierCurveTo(this.x - b * m, this.y + a1 * n, this.x - a2 * m, this.y + b3 * n, this.x, this.y); //第3
+				ctx.bezierCurveTo(this.x + b * m, this.y + a1 * n, this.x + a2 * m, this.y + b3 * n, this.x, this.y); //第4
+
+				ctx.strokeStyle = 'lightblue';
+				ctx.stroke();
+				ctx.fill();
+
+				ctx.beginPath();
+				ctx.moveTo(this.x, this.y);
+				ctx.bezierCurveTo(this.x, this.y - a1 * n, this.x + 8 * m, this.y - 60 * n, this.x + a2 * m, this.y - 70 * n);
+				ctx.moveTo(this.x, this.y);
+				ctx.bezierCurveTo(this.x, this.y - a1 * n, this.x - 8 * m, this.y - 60 * n, this.x - a2 * m, this.y - 70 * n);
+				ctx.strokeStyle = 'lightgrey';
+				ctx.stroke();
+			}
+
+			if(buttleflyFlag == 1 || buttleflyFlag == 3) {
+				if(buttleflyFlag == 3) {
+					a3 = -100;
+					b3 = 80;
+				} else if(buttleflyFlag == 1) {
+					n = -1;
+				}
+				ctx.bezierCurveTo(this.x - a1 * n, this.y + a * m, this.x + a3 * n, this.y + a2 * m, this.x, this.y); //第1
+				ctx.bezierCurveTo(this.x - a1 * n, this.y - a * m, this.x + a3 * n, this.y - a2 * m, this.x, this.y); //第2
+				ctx.bezierCurveTo(this.x + a1 * n, this.y - b * m, this.x + b3 * n, this.y - a2 * m, this.x, this.y); //第3
+				ctx.bezierCurveTo(this.x + a1 * n, this.y + b * m, this.x + b3 * n, this.y + a2 * m, this.x, this.y); //第4
+
+				ctx.strokeStyle = 'lightblue';
+				ctx.stroke();
+				ctx.fill();
+
+				ctx.beginPath();
+				ctx.moveTo(this.x, this.y);
+				ctx.bezierCurveTo(this.x - a1 * n, this.y, this.x - 60 * n, this.y + 8 * m, this.x - 70 * n, this.y + a2 * m);
+				ctx.moveTo(this.x, this.y);
+				ctx.bezierCurveTo(this.x - a1 * n, this.y, this.x - 60 * n, this.y - 8 * m, this.x - 70 * n, this.y - a2 * m);
+				ctx.strokeStyle = 'lightgrey';
+				ctx.stroke();
+			}
+		}
+
+		//创建蝴蝶
+		function buttleflys() {
+			var x = buttleflyX;
+			var y = buttleflyY;
+			var bc = 'rgb(' + rn(235, 255) + ',' + 158 + ',' + 194 + ')';
+			//实例化一个蝴蝶
+			var butterFly = new Butterfly(x, y, bc);
+			bullerflyArr.push(butterFly);
+			butterFly.move();
+		}
+		buttleflys();
+
+		//创建敌军
+
+		//用面向封装敌军
+		/*
+		 * Ball():小球类
+		 * x,y 小球圆心坐标
+		 * r 小球半径
+		 * bgColor 小球颜色
+		 * vx，vy水平方向和竖直方向的速度
+		 */
+		function EnemyBall(x, y, r, bg, vx, vy) {
+			this.x = x;
+			this.y = y;
+			this.r = r;
+			this.bg = bg;
+			this.vx = vx;
+			this.vy = vy;
+		}
+		//原型方法
+		EnemyBall.prototype.move = function() {
+			//碰撞速度置负
+			if(this.x < this.r || this.x > myCanvas.width - this.r) {
+				this.vx = -this.vx;
+			}
+			if(this.y < this.r || this.y > myCanvas.height - this.r) {
+				this.vy = -this.vy;
+			}
+			//改变圆心位置
+			this.x += this.vx;
+			this.y += this.vy;
+			//绘制
+			ctx.beginPath();
+			var g1 = ctx.createRadialGradient(this.x - 5, this.y - 5, 0, this.x, this.y, this.r * 3 / 2);
+			g1.addColorStop('0', 'transparent');
+			g1.addColorStop('1', this.bg);
+			ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+			ctx.fillStyle = g1;
+			ctx.fill();
+		}
+
+		//实例化敌军
+		var enemyArr = [];
+		var enemyColor = ['orangered', 'lightyellow', 'greenyellow', 'skyblue '];
+		var enemySpeed = [2, -2, 3, -3];
+
+		function createEnemy() {
+			var x = rn(myCanvas.width / 2, myCanvas.width - 40);
+			var y = rn(40, myCanvas.height - 40);
+			var r = rn(30, 40);
+			var bg = enemyColor[rn(0, enemyColor.length - 1)];
+			var vx = enemySpeed[rn(0, enemySpeed.length - 1)];
+			var vy = enemySpeed[rn(0, enemySpeed.length - 1)];
+			var newenemy = new EnemyBall(x, y, r, bg, vx, vy);
+			enemyArr.push(newenemy);
+			newenemy.move();
+		}
+		//循环敌军
+		for(var i = 0; i < 6; i++) {
+			createEnemy();
+		}
+
+		//敌军碰撞判断
+		function judgeBoom() {
+			for(var i = 0; i < enemyArr.length; i++) {
+				var a = enemyArr[i];
+				var b = bullerflyArr[0];
+				var bgl = Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.y - a.y, 2))
+					//a和b的碰撞检测
+				if(bgl < a.r + 60) {
+					if(butterflyB.length > 0) {
+						if(butterflyB[butterflyB.length - 1].bg == enemyArr[i].bg) {
+							butterflyB.pop();
+						} else {
+							butterflyB.push(enemyArr[i]);
+						}
+					}else{
+						butterflyB.push(enemyArr[i]);
+					}
+					//两两碰撞
+					enemyArr.splice(i, 1); //移除子弹
+					createEnemy();
+					i--;
+					//当碰撞上时,两个块都已经没有作用,删除之后,不用做多余的比较,直接跳出内层循环,让外层循环进行下一次碰撞检测
+				}
+			}
+		}
+
+		//蝴蝶尾部数组
+		var butterflyB = [];
+
+		function BottomBall(x, y, r, bg, bg2) {
+			this.x = x;
+			this.y = y;
+			this.r = r;
+			this.bg = bg;
+			this.bg2 = bg2;
+		}
+		BottomBall.prototype.move = function() {
+
+			//绘制
+			ctx.beginPath();
+			var g1 = ctx.createRadialGradient(this.x - 5, this.y - 5, 0, this.x, this.y, this.r * 3 / 2);
+			g1.addColorStop('0', this.bg2);
+			g1.addColorStop('1', this.bg);
+			ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+			ctx.fillStyle = g1;
+			ctx.fill();
+		}
+
+		var bottomFlag;
+
+		var bottomFlagArr = [];
+		var o1o = 30;
+		//创建蝴蝶尾部
+		function butterflyBottom() {
+			var b = bullerflyArr[0];
+			bottomFlagArr.splice(butterflyB.length,bottomFlagArr.length-butterflyB.length-1);
+			for(var i = 0; i < butterflyB.length; i++) {
+				var a = butterflyB[i];
+				var j = i - 1;
+				if(i < 1) {
+					var x = b.x;
+					if(bottomFlagArr[i] == 1) {
+						x -= o1o;
+					}
+					if(bottomFlagArr[i] == 3) {
+						x += o1o;
+					}
+					var y = b.y;
+					if(bottomFlagArr[i] == 0) {
+						y += o1o;
+					}
+					if(bottomFlagArr[i] == 2) {
+						y -= o1o;
+					}
+
+					var r = 15;
+					var bg = a.bg;
+					var bg2 = 'transparent';
+
+					var newbottom = new BottomBall(x, y, r, bg, bg2);
+					butterflyB.splice(i, 1, newbottom);
+					newbottom.move();
+				} else {
+					var c = butterflyB[j];
+					var x = c.x;
+					if(bottomFlagArr[i] == 1) {
+						x -= o1o;
+						//bottomFlagArr[i] == 4;
+					}
+					if(bottomFlagArr[i] == 3) {
+						x += o1o;
+						//bottomFlagArr[i] == 4;
+					}
+					var y = c.y;
+					if(bottomFlagArr[i] == 0) {
+						y += o1o;
+						//bottomFlagArr[i] == 4;
+					}
+					if(bottomFlagArr[i] == 2) {
+						y -= o1o;
+						//bottomFlagArr[i] == 4;
+					}
+
+					var bg = a.bg;
+					var bg2 = 'transparent';
+					if(i == butterflyB.length - 1) {
+						var r = 30;
+						var newbottom = new BottomBall(x, y, r, bg, bg);
+
+					} else {
+						var r = 15;
+						var newbottom = new BottomBall(x, y, r, bg, bg2);
+
+					}
+					butterflyB.splice(i, 1, newbottom);
+					newbottom.move();
+				}
+
+			}
+		}
+
+		//绘制频率
+		eleMoveTimer = setInterval(function() {
+			//根据重绘频率，清除一次画布
+			ctx.clearRect(0, 0, 1280, 720);
+
+			ctx.drawImage(img, 0, 0, myCanvas.width, myCanvas.height);
+			//createBg();
+
+			//循环绘制雪花
+			for(var i = 0; i < snowArr.length; i++) {
+				snowArr[i].move();
+			}
+			//绘制小雪花
+			for(var j = 0; j < boomSnowArr.length; j++) {
+				for(var k = 0; k < boomSnowArr[j].length; k++) {
+					boomSnowArr[j][k].move();
+				}
+			}
+			//绘制敌军
+			for(var l = 0; l < enemyArr.length; l++) {
+				enemyArr[l].move();
+			}
+			//绘制尾巴
+			butterflyBottom();
+
+			//绘制蝴蝶
+			bullerflyArr[0].move();
+			judgeSnowes(); //绘制雪花
+			snowHit(); //小雪花碰撞
+			judgeSnowBoom(); //小雪花边界移除
+			judgeBoom(); //敌军碰撞判断
+
+		}, 10);
+
+		//生成掉落物的计时器
+		createSnowesTimer = setInterval(function() {
+			createSnowes();
+		}, 200);
+	</script>
+
+</html>
